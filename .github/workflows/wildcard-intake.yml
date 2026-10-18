@@ -11,16 +11,18 @@
 # issue — skips the frontmatter and lands with no labels at all.
 #
 # That decides eligibility, because the label is the routing key into triage.
-# Measured against MOONSHOT.md's ledger on 2026-10-18:
+# Measured on 2026-10-18 against MOONSHOT.md's ledger, and confirmed by the
+# second intake batch (ledger commit 2026-10-17T20:24), where ten proposals
+# were available to the same triage pass:
 #
-#     labeled   + in ledger    : 10
-#     labeled   + not in ledger:  5
-#     unlabeled + in ledger    :  0
-#     unlabeled + not in ledger: 12
+#     taken   : #375 #378 #417 #462  — all four labeled (#375 hand-labeled at
+#               20:23, one minute before the commit)
+#     skipped : #394 #428 #448 #458 #471 #482 — all six unlabeled
 #
-# Not one unlabeled proposal has ever reached the ledger, and several
-# unlabeled ones are older than labeled proposals that did. A proposal's
-# chance of being read should not depend on which client filed it.
+# Every proposal ever processed carries the label; no unlabeled proposal has
+# ever been processed. The label may be a byproduct of processing rather than
+# the gate, but either way an unlabeled proposal is indistinguishable from an
+# unprocessed one — and 14 are in that state today.
 #
 # Both jobs read the labels and the title prefix from the form at runtime via
 # tools/wildcard_intake.py, so this workflow cannot drift from the template:
@@ -32,13 +34,24 @@ name: wildcard intake
 on:
   issues:
     types: [opened]
-  # Backfill proposals filed before this workflow existed. Manual on purpose:
-  # labelling is a triage act, so it runs when a maintainer asks for it.
+  # Self-healing: a proposal that still arrives unlabeled is corrected within
+  # the hour rather than waiting for someone to notice. The form already
+  # declares these labels, so applying them is not a new decision — it is the
+  # template's own intent, executed on the paths the template cannot reach.
+  schedule:
+    - cron: '17 * * * *'
+  # Manual run, for backfilling on demand.
   workflow_dispatch:
 
 permissions:
   contents: read
   issues: write
+
+# Overlapping runs would race on the same issues; the work is idempotent but
+# there is no reason to do it twice at once.
+concurrency:
+  group: wildcard-intake
+  cancel-in-progress: false
 
 jobs:
   label-new-proposal:
@@ -73,7 +86,7 @@ jobs:
           gh issue edit "$number" --repo "$REPO" "${args[@]}"
 
   backfill-existing-proposals:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name != 'issues'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -103,3 +116,4 @@ jobs:
             echo "labelling #$number with: ${parts[*]}"
             gh issue edit "$number" --repo "$REPO" "${args[@]}"
           done < /tmp/todo.txt
+          echo "done"
