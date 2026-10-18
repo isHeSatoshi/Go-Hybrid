@@ -1,7 +1,7 @@
 # tests/checker-corpus — adversarial programs with pre-registered verdicts
 
-**Current registered corpus: 77 programs** — ACCEPT 21 · ACCEPT-MANAGED 2 ·
-REJECT 54 — each with a machine-readable `// EXPECTED-VERDICT:` header and a
+**Current registered corpus: 84 programs** — ACCEPT 22 · ACCEPT-MANAGED 2 ·
+REJECT 60 — each with a machine-readable `// EXPECTED-VERDICT:` header and a
 row in [VERDICTS.md](VERDICTS.md). The 18 originally registered here were
 written BEFORE the Phase-1 checker existed; that registration grew to 20
 during the 2026-10-12 integration, and every case after it was added
@@ -62,3 +62,24 @@ surface with author credit (tests extracted to
 
 With this registration the corpus is **78 programs: ACCEPT 21 ·
 ACCEPT-MANAGED 2 · REJECT 55**.
+
+`any-arithmetic-reject.hy`, `any-field-access-reject.hy`, `any-index-reject.hy`,
+`any-call-reject.hy`, `any-operations-controls-accept.hy` — isHeSatoshi
+(issue #682): the U9–U12 operations on `any`. The root cause was a
+classification rather than a missing check: `any` resolved to
+`OpKind::Unknown`, and `Unknown` is fail-open everywhere by design (it means
+"the checker could not resolve this"). `any` is the opposite — a resolved type
+Go refuses to operate on — so it now resolves to `OpKind::Interface`, which
+puts it in the operand checks' reject set because those checks list the kinds
+they ACCEPT. All four rejects are `HYB-E1002` (`BUILDABLE`, Row 13) and each was
+reproduced as a real `go build` failure first. The fifth fixture is the ACCEPT
+half and carries the weight here: `any` is legal as an assignment target, a
+call and task-spawn argument, a container element and map value, a struct field
+type, and an `==` operand (Go converts the non-interface side, so only the
+ORDERED comparisons are illegal). `fmt.println(v)` is pinned explicitly because
+it is a Field access whose base is the `fmt` package rather than an interface —
+the first false positive a careless field-access check produces. Rules live in
+`hy-check/tests/any_interface_operations.rs` (7 tests).
+
+With this registration the corpus is **84 programs: ACCEPT 22 ·
+ACCEPT-MANAGED 2 · REJECT 60**.
