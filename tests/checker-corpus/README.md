@@ -1,7 +1,6 @@
 # tests/checker-corpus — adversarial programs with pre-registered verdicts
 
-**Current registered corpus: 105 programs** — ACCEPT 33 · ACCEPT-MANAGED 2 ·
-REJECT 70 — each with a machine-readable `// EXPECTED-VERDICT:` header and a
+**Current registered corpus: 109 programs — ACCEPT 34 · ACCEPT-MANAGED 2 · REJECT 73 — each with a machine-readable `// EXPECTED-VERDICT:` header and a
 row in [VERDICTS.md](VERDICTS.md). The 18 originally registered here were
 written BEFORE the Phase-1 checker existed; that registration grew to 20
 during the 2026-10-12 integration, and every case after it was added
@@ -81,10 +80,8 @@ and panics at run time while `a[300]` on `[2]int` does not, `-n` on an int8
 type's range. Each header states what it fences and cites GUARANTEES.md Row 13
 (BUILDABLE) or the Row 16 "No claim" position for run-time panics, so a
 reviewer can see why ACCEPT is correct rather than an oversight.
-
 With this registration the corpus is **89 programs: ACCEPT 29 ·
 ACCEPT-MANAGED 2 · REJECT 58**.
-
 `*-addr-of-call-*.hy` — G0st13 (PR #436): the corpus-side pin for the
 address-of launder (#435). `collect_ref_roots` walks `AddrOf` and the
 `UnOp::Addr` spelling, so `p := keep(&h)` contributes its root and `move h`
@@ -94,7 +91,6 @@ cannot degrade into "never take an address". Unit tests carried in
 `hy-check/tests/addr_of_alias.rs` (reject, the direct `&h` twin, both
 controls). Registered as 65/66: the PR authored them as 61/62, but 61–64
 were taken before it landed.
-
 `conversion-arity-reject.hy`, `struct-literal-unknown-field-reject.hy`,
 `field-assign-wrong-type-reject.hy`, `struct-and-conversion-controls-accept.hy`
 — isHeSatoshi (issue #682): the U13–U16 accept-but-unbuildable type/shape gaps.
@@ -108,7 +104,6 @@ assigned to a `float64` field (which is why `Int` into a float target must stay
 allowed), a same-typed struct assignment, an `any` target, and a multi-value
 binding that is not a single-target assignment. Rules live in
 `hy-check/tests/struct_and_conversion_shape_guards.rs` (8 tests).
-
 `any-arithmetic-reject.hy`, `any-field-access-reject.hy`, `any-index-reject.hy`,
 `any-call-reject.hy`, `any-operations-controls-accept.hy` — isHeSatoshi
 (issue #682, the same report as the U13–U16 batch above): the U9–U12 operations
@@ -127,7 +122,6 @@ non-interface side, so only the ORDERED comparisons are illegal).
 the `fmt` package rather than an interface — the first false positive a careless
 field-access check produces. Rules live in
 `hy-check/tests/any_interface_operations.rs` (7 tests).
-
 With this registration the corpus is **100 programs: ACCEPT 32 ·
 ACCEPT-MANAGED 2 · REJECT 66**.
 `67-adversarial-race-spawn.hy` — KonstantinPythonLab (PR #402, issue #5):
@@ -169,5 +163,5 @@ the landed T23 rule's `HYB-E2002` (pr-599/#669 classifies the containing
 header records this and the rust test pins E1002's presence. Rules live in
 `hy-check/tests/multivalue_and_void_positions.rs` (8 tests).
 
-With this registration the corpus is **105 programs: ACCEPT 33 ·
-ACCEPT-MANAGED 2 · REJECT 70**.
+With this registration the corpus is **109 programs: ACCEPT 34 ·
+ACCEPT-MANAGED 2 · REJECT 73**.
