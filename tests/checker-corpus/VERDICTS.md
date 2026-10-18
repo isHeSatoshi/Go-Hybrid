@@ -644,3 +644,39 @@ so `move h` froze `h` but not `shared` and the emitted Go raced.
 | 58 | 58-defer-live-reference-via-alias | REJECT | A1b | `HYB-E3003` | the deferred call names the ALIAS, the move transfers the ORIGIN |
 | 59 | 59-rebind-forgets-defer-capture | REJECT | A1b | `HYB-E3003` | rebinding the name must not forget the captured storage |
 | 60 | 60-rebind-without-defer-control | ACCEPT | — | — | the over-rejection guard: a rebind with no defer and no boundary |
+
+## Additive corpus registration ? 2026-10-18: channel-element and type-erasure surfaces
+
+Seven fixtures pin surfaces the corpus had **no** representation of, all on the
+send/boundary side rather than the spawn-argument side:
+
+| surface | corpus coverage before | after |
+|---|---|---|
+| `chan []T` (slice element type) | 0/60 | 2 |
+| `chan map[K]V` with a write after the send | 0/60 (16/17 never touch it again) | 1 |
+| `chan fn()` (channel of closures) | 0/60 | 1 |
+| `*map[K]V` (pointer to a map) | 0/60 (03 is `&struct`) | 1 |
+| `any` erasing a shared reference at a boundary | 0/60 (`any` appears in 27 files, never as an erasing binding at a check site) | 2 |
+
+Each rejection is paired with an ACCEPT control where the over-rejection risk is
+real, so the rule stays pinned as value-based rather than type- or keyword-based.
+
+| program | verdict | rule | diagnostic | rationale |
+|---|---|---|---|---|
+| chan-slice-aliased-at-send | REJECT | A1c | `HYB-E3002` | `ch <- shared` where `shared` is a live `[]int` and the sender writes `shared[0]` afterwards ? the receiver's `xs` and the sender's `shared` name the same array element |
+| chan-slice-fresh-control | ACCEPT | ? | ? | the same channel with a fresh literal at the send site: nothing else names the array |
+| chan-map-aliased-at-send | REJECT | A1c | `HYB-E3002` | the map twin, and the write-after-send form the corpus's map cases never reach |
+| any-erasure-shared-map-at-spawn | REJECT | A1c | `HYB-E3001` | `var v any = m` then `task worker(v, done)` ? erasing the static type does not change what the value is |
+| any-erasure-primitive-control | ACCEPT | ? | ? | the pair: an `any` holding an immutable primitive crosses, proving the rejection above is about the map and not the `any` keyword |
+| chan-of-closure-at-send | REJECT (contested) | A1c | `HYB-E3002` | a deliberately CAPTURE-FREE closure still rejects at a send site: the value class is what is refused, not this closure's environment |
+| ptr-to-map-at-spawn | REJECT (contested) | A1c | `HYB-E3001` | `p := &m; task worker(p, done)` with `m` never written afterwards ? the rule is type-based, so it does not consult whether the pointee is still named elsewhere |
+
+The two contested rows are registered REJECT because that is what the A1c rule key
+says today (a closure and a `*map` are neither channel/atomic/immutable, nor
+`move`d, nor `managed`). If the maintainer rules either shape should be legal,
+the row moves to ACCEPT by a logged amendment ? the fixtures exist so that
+decision is visible either way.
+
+Reproduction (checker built from main at 422066b, the pinned toolchain):
+`python3 tools/corpus_harness.py --bin compiler/target/debug/hyb` reports
+**67/67 verdict agreement, tripwire not fired**.
