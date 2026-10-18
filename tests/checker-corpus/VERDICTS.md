@@ -645,7 +645,33 @@ so `move h` froze `h` but not `shared` and the emitted Go raced.
 | 59 | 59-rebind-forgets-defer-capture | REJECT | A1b | `HYB-E3003` | rebinding the name must not forget the captured storage |
 | 60 | 60-rebind-without-defer-control | ACCEPT | — | — | the over-rejection guard: a rebind with no defer and no boundary |
 
-## Additive corpus registration ? 2026-10-18: channel-element and type-erasure surfaces
+## Additive corpus registration — 2026-10-17: malformed string escapes fail closed
+
+One case registered WITH its fix. It pins the lexer's fail-closed contract:
+a malformed `\x`/`\u`/`\U` escape in an interpreted string (LX7's Go escape
+set) must reject with `HYB-E0002`, never pass silently with a corrupted
+value. Before the fix `"\u{41}"` was ACCEPTED with 0 diagnostics and lexed
+to the value `"41}"` (the `\u{` was dropped, the rest leaked as literal
+text); `"\xG1"` became `"1"`; `"\u12G4"` became `"4"`. Root cause:
+`escape_char`'s hex-digit error paths returned `None` without recording
+the diagnostic both callers assume, so the string lexer silently kept one
+bumped char verbatim. The brace form after `\u` is LX6 rune-literal
+syntax; in a string it is a malformed escape, and the diagnostic says so.
+Surrogates (`\ud800`) and values above U+10FFFF (`\U0011FFFF`) are the
+same family and reject likewise (unit tests in `hy-syntax/src/lexer.rs`:
+six malformed cases plus the valid-escape over-rejection guard). The new
+diagnostics carry `tier0_rule` `LX6`/`LX7` so this harness can join on
+them; no registry entry changes (HYB-E0002 keeps its parse-error slot).
+
+| # | program | verdict | rule | diagnostic | rationale |
+|---|---------|---------|------|------------|-----------|
+| 61 | 61-string-escape-fail-closed | REJECT | LX7 | `HYB-E0002` | `s := "\u{41}"` — the LX6 rune form in a string is a malformed LX7 escape; it must be named, not silently dropped |
+
+With this addition the registered corpus is **61 programs:
+ACCEPT 15 · ACCEPT-MANAGED 2 · REJECT 44**. The file contains no `managed`
+block; the harness's historical as-written set {01, 03, 04} is unchanged,
+so the tripwire ratios only move with the larger total.
+## Additive corpus registration — 2026-10-18: channel-element and type-erasure surfaces
 
 Seven fixtures pin surfaces the corpus had **no** representation of, all on the
 send/boundary side rather than the spawn-argument side:
@@ -663,20 +689,25 @@ real, so the rule stays pinned as value-based rather than type- or keyword-based
 
 | program | verdict | rule | diagnostic | rationale |
 |---|---|---|---|---|
-| chan-slice-aliased-at-send | REJECT | A1c | `HYB-E3002` | `ch <- shared` where `shared` is a live `[]int` and the sender writes `shared[0]` afterwards ? the receiver's `xs` and the sender's `shared` name the same array element |
-| chan-slice-fresh-control | ACCEPT | ? | ? | the same channel with a fresh literal at the send site: nothing else names the array |
+| chan-slice-aliased-at-send | REJECT | A1c | `HYB-E3002` | `ch <- shared` where `shared` is a live `[]int` and the sender writes `shared[0]` afterwards — the receiver's `xs` and the sender's `shared` name the same array element |
+| chan-slice-fresh-control | ACCEPT | — | — | the same channel with a fresh literal at the send site: nothing else names the array |
 | chan-map-aliased-at-send | REJECT | A1c | `HYB-E3002` | the map twin, and the write-after-send form the corpus's map cases never reach |
-| any-erasure-shared-map-at-spawn | REJECT | A1c | `HYB-E3001` | `var v any = m` then `task worker(v, done)` ? erasing the static type does not change what the value is |
-| any-erasure-primitive-control | ACCEPT | ? | ? | the pair: an `any` holding an immutable primitive crosses, proving the rejection above is about the map and not the `any` keyword |
+| any-erasure-shared-map-at-spawn | REJECT | A1c | `HYB-E3001` | `var v any = m` then `task worker(v, done)` — erasing the static type does not change what the value is |
+| any-erasure-primitive-control | ACCEPT | — | — | the pair: an `any` holding an immutable primitive crosses, proving the rejection above is about the map and not the `any` keyword |
 | chan-of-closure-at-send | REJECT (contested) | A1c | `HYB-E3002` | a deliberately CAPTURE-FREE closure still rejects at a send site: the value class is what is refused, not this closure's environment |
-| ptr-to-map-at-spawn | REJECT (contested) | A1c | `HYB-E3001` | `p := &m; task worker(p, done)` with `m` never written afterwards ? the rule is type-based, so it does not consult whether the pointee is still named elsewhere |
+| ptr-to-map-at-spawn | REJECT (contested) | A1c | `HYB-E3001` | `p := &m; task worker(p, done)` with `m` never written afterwards — the rule is type-based, so it does not consult whether the pointee is still named elsewhere |
 
 The two contested rows are registered REJECT because that is what the A1c rule key
 says today (a closure and a `*map` are neither channel/atomic/immutable, nor
 `move`d, nor `managed`). If the maintainer rules either shape should be legal,
-the row moves to ACCEPT by a logged amendment ? the fixtures exist so that
+the row moves to ACCEPT by a logged amendment — the fixtures exist so that
 decision is visible either way.
 
-Reproduction (checker built from main at 422066b, the pinned toolchain):
+Reproduction (checker built from the merged tree, pinned toolchain):
 `python3 tools/corpus_harness.py --bin compiler/target/debug/hyb` reports
-**67/67 verdict agreement, tripwire not fired**.
+**68/68 verdict agreement, tripwire not fired**.
+
+With both registrations the corpus is **68 programs: ACCEPT 17 ·
+ACCEPT-MANAGED 2 · REJECT 49** — the 61 above plus these seven. The
+coverage table's `before` column is the 60-program corpus this section was
+authored against, before the 2026-10-17 escape fixture landed.
