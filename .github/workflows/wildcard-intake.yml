@@ -1,0 +1,105 @@
+# Wildcard Track intake labels — BOUNTY.md Track 3, ledger in MOONSHOT.md.
+#
+# The wildcard issue form declares its own routing labels:
+#
+#     title: "[wildcard] "
+#     labels: ["wildcard", "💎 Bounty"]
+#
+# GitHub applies those labels ONLY when an issue is created through the web
+# template chooser. The same template-shaped body filed through the API —
+# `gh issue create --body-file`, which is how a script or an agent files an
+# issue — skips the frontmatter and lands with no labels at all.
+#
+# That decides eligibility, because the label is the routing key into triage.
+# Measured against MOONSHOT.md's ledger on 2026-10-18:
+#
+#     labeled   + in ledger    : 10
+#     labeled   + not in ledger:  5
+#     unlabeled + in ledger    :  0
+#     unlabeled + not in ledger: 12
+#
+# Not one unlabeled proposal has ever reached the ledger, and several
+# unlabeled ones are older than labeled proposals that did. A proposal's
+# chance of being read should not depend on which client filed it.
+#
+# Both jobs read the labels and the title prefix from the form at runtime via
+# tools/wildcard_intake.py, so this workflow cannot drift from the template:
+# change the form and this follows, with no second copy to forget. Neither job
+# hardcodes a label or a prefix, which is why the on-open job has no cheap
+# title gate — the predicate is the tool's, not a copy of it in YAML.
+name: wildcard intake
+
+on:
+  issues:
+    types: [opened]
+  # Backfill proposals filed before this workflow existed. Manual on purpose:
+  # labelling is a triage act, so it runs when a maintainer asks for it.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  label-new-proposal:
+    if: github.event_name == 'issues'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout (pinned v4)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Apply the labels the wildcard form declares
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -e
+          # Re-read the issue through gh rather than interpolating its title
+          # into JSON here: a title containing a quote or a backslash would
+          # break a hand-built document, and this runs on every new issue.
+          gh issue view "$ISSUE" --repo "$REPO" \
+            --json number,title,labels > /tmp/one.json
+          python3 tools/wildcard_intake.py --select < /tmp/one.json > /tmp/todo.txt
+          if [ ! -s /tmp/todo.txt ]; then
+            echo "issue #$ISSUE is not an unlabelled wildcard proposal; nothing to do"
+            exit 0
+          fi
+          IFS=: read -r number labels < /tmp/todo.txt
+          args=()
+          IFS=',' read -ra parts <<< "$labels"
+          for lb in "${parts[@]}"; do args+=(--add-label "$lb"); done
+          echo "labelling #$number with: ${parts[*]}"
+          gh issue edit "$number" --repo "$REPO" "${args[@]}"
+
+  backfill-existing-proposals:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout (pinned v4)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Label every open proposal that is missing its routing labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -e
+          gh issue list --repo "$REPO" --state open --limit 1000 \
+            --json number,title,labels > /tmp/wildcard-issues.json
+          python3 tools/wildcard_intake.py --select \
+            < /tmp/wildcard-issues.json > /tmp/todo.txt
+          if [ ! -s /tmp/todo.txt ]; then
+            echo "every open wildcard proposal already carries its labels"
+            exit 0
+          fi
+          echo "proposals missing labels:"
+          cat /tmp/todo.txt
+          while IFS=: read -r number labels; do
+            [ -n "$number" ] || continue
+            args=()
+            IFS=',' read -ra parts <<< "$labels"
+            for lb in "${parts[@]}"; do args+=(--add-label "$lb"); done
+            echo "labelling #$number with: ${parts[*]}"
+            gh issue edit "$number" --repo "$REPO" "${args[@]}"
+          done < /tmp/todo.txt

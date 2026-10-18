@@ -23,7 +23,7 @@ jobs:
         run: |
           set -e
 
-          python3 -m py_compile tools/runner/runner.py tools/job.py worker/script.py tools/corpus_harness.py tools/test_corpus_harness.py tools/test_corpus_utf8.py tools/extract_offsets.py tools/test_extract_offsets.py tools/triage_bot.py tools/shepherd.py
+          python3 -m py_compile tools/runner/runner.py tools/job.py worker/script.py tools/corpus_harness.py tools/test_corpus_harness.py tools/test_corpus_utf8.py tools/extract_offsets.py tools/test_extract_offsets.py tools/triage_bot.py tools/shepherd.py tools/wildcard_intake.py tools/test_wildcard_intake.py
           # Fail closed on a committed merge-conflict marker: a marker in a
           # tracked file is invisible to the suites but can make the whole
           # workflow unparseable and take every run (and every PR) down.
@@ -45,6 +45,10 @@ jobs:
           python3 -m unittest discover -s tools -p test_runner_sha.py -v
           python3 -m unittest discover -s tools -p test_runner_env_report.py -v
           python3 -m unittest discover -s tools -p test_check_versions.py -v
+          # The wildcard form declares the routing labels for BOUNTY.md Track 3.
+          # If the form and the intake workflow drift apart, proposals land
+          # unlabeled and never reach the MOONSHOT ledger.
+          python3 -m unittest discover -s tools -p test_wildcard_intake.py -v
           python3 -m unittest discover -s tools -p test_differential_reject_rule.py -v
           python3 -m unittest discover -s tools -p test_corpus_harness.py -v
           python3 -m unittest discover -s tools -p test_extract_offsets.py -v
