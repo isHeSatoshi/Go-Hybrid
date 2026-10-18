@@ -644,3 +644,28 @@ so `move h` froze `h` but not `shared` and the emitted Go raced.
 | 58 | 58-defer-live-reference-via-alias | REJECT | A1b | `HYB-E3003` | the deferred call names the ALIAS, the move transfers the ORIGIN |
 | 59 | 59-rebind-forgets-defer-capture | REJECT | A1b | `HYB-E3003` | rebinding the name must not forget the captured storage |
 | 60 | 60-rebind-without-defer-control | ACCEPT | — | — | the over-rejection guard: a rebind with no defer and no boundary |
+
+## Additive corpus registration ? 2026-10-18: deep sendability under `move` (depth 3)
+
+GUARANTEES.md claim 3 promises **deep** sendability ? "every reference-typed
+field/element must itself be sendable; a fresh literal wrapping a shared map is
+still rejected". Corpus 45 pins that at depth 2, but it sends **without** `move`,
+so it rejects at the safe-by-type gate and the deep walk is never reached. This
+pair uses `move` on **both** halves, which removes the safe-by-type question
+entirely and isolates the deep-embedding question at depth 3
+(`[]holder` ? `holder` ? `map[string]int`).
+
+| program | verdict | rule | diagnostic | rationale |
+|---|---|---|---|---|
+| deep-composite-move-shared-at-spawn | REJECT | A1b | `HYB-E3003` | `xs := []holder{holder{m: shared}}` then `task worker(move xs, done)` then `shared["a"] = 2` ? the move transfers the composite but not the map HEADER embedded in it, so `shared` and `xs[0].m` name one hash table and the write is use-after-move |
+| deep-composite-move-fresh-control | ACCEPT | ? | ? | structurally identical (same slice, struct, `move`, channel) with a fresh innermost map: nothing outside `xs` names it, so the value is self-contained |
+
+The control matters more than the rejection here: a checker that rejected it
+would ban nested composite literals from every boundary, which would make the
+deep rule unusable. This is corpus 54's finding (a field store materializes the
+edge) taken one level deeper ? through a struct nested inside a slice ? and
+separated from the safe-by-type gate by the `move`.
+
+Reproduction (checker built from main at 422066b, the pinned toolchain):
+`python3 tools/corpus_harness.py --bin compiler/target/debug/hyb` reports
+**62/62 verdict agreement, tripwire not fired**.

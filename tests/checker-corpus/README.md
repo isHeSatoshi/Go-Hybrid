@@ -20,7 +20,7 @@ the new fixtures.
 
 The prose below is the original pre-registration statement, kept as written
 on its date: the corpora sizes it names (18, 20) are what the corpus held
-then, not today's 60. The dated tripwire baseline is preserved as historical
+then, not today's 62. The dated tripwire baseline is preserved as historical
 for the same reason.
 
 18 pseudo-Hybrid (`.hy`) programs written BEFORE the Phase-1 checker exists,
