@@ -32,6 +32,11 @@ This module is the single source of truth for both halves of the fix:
   * `needs_labels()` is the selection predicate, kept pure and unit-tested
     so the backfill and the on-open job share one implementation.
 
+`--select` accepts either a JSON list (`gh issue list`) or a single issue
+object (`gh issue view`), because the two workflow jobs read those two
+different shapes. Accepting both keeps one tested code path rather than a
+second, untested one written in YAML.
+
 Stdlib only. Exit codes: 0 = ok, 1 = problem found, 2 = misuse.
 """
 import argparse
@@ -184,12 +189,22 @@ def main():
     if args.select:
         raw = sys.stdin.read()
         try:
-            issues = json.loads(raw) if raw.strip() else []
+            data = json.loads(raw) if raw.strip() else []
         except ValueError as e:
             print(f"usage error: stdin is not JSON: {e}", file=sys.stderr)
             return 2
-        if not isinstance(issues, list):
-            print("usage error: stdin JSON must be a list of issues", file=sys.stderr)
+        # The two callers read different gh shapes: `gh issue list` returns a
+        # list, `gh issue view` returns one object. Accepting both here keeps
+        # one tested code path instead of a second, untested one in YAML.
+        if isinstance(data, dict):
+            issues = [data]
+        elif isinstance(data, list):
+            issues = data
+        else:
+            print(
+                "usage error: stdin JSON must be an issue object or a list of them",
+                file=sys.stderr,
+            )
             return 2
         for number, missing in select(issues, labels, prefix):
             print(f"{number}:{','.join(missing)}")

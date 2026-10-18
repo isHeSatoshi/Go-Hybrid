@@ -12,6 +12,8 @@ contract rather than whatever the real form happens to say today.
 import json
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -137,6 +139,72 @@ class SelectionTests(unittest.TestCase):
         issues = [issue(3, "[wildcard] c"), issue(1, "[wildcard] a"), issue(2, "[wildcard] b")]
         self.assertEqual([n for n, _ in wi.select(issues, self.LABELS, self.PREFIX)],
                          [3, 1, 2])
+
+
+class CliShapeTests(unittest.TestCase):
+    """`--select` must accept the shape each workflow job actually pipes in.
+
+    The on-open job pipes `gh issue view --json ...`, which is ONE object; the
+    backfill pipes `gh issue list --json ...`, which is a LIST. An earlier
+    draft accepted only the list, so the on-open job died with
+    "stdin JSON must be a list of issues" the moment a real issue arrived.
+    """
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        write_template(
+            self.root,
+            'title: "[wildcard] "\nlabels: ["wildcard", "💎 Bounty"]\nbody:\n',
+        )
+        self.tool = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "wildcard_intake.py")
+
+    def run_tool(self, stdin):
+        return subprocess.run(
+            [sys.executable, self.tool, "--root", self.root, "--select"],
+            input=stdin, capture_output=True, text=True, encoding="utf-8",
+        )
+
+    def test_single_object_from_gh_issue_view(self):
+        payload = json.dumps(issue(565, "[wildcard] x"))
+        r = self.run_tool(payload)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.strip(), "565:wildcard,💎 Bounty")
+
+    def test_list_from_gh_issue_list(self):
+        payload = json.dumps([issue(1, "[wildcard] a"), issue(2, "[wildcard] b")])
+        r = self.run_tool(payload)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        # splitlines, not split: one label contains a space, so the line is
+        # "1:wildcard,💎 Bounty" and whitespace-splitting would cut it in two.
+        self.assertEqual(r.stdout.splitlines(),
+                         ["1:wildcard,💎 Bounty", "2:wildcard,💎 Bounty"])
+
+    def test_single_non_wildcard_object_is_a_clean_no_op(self):
+        r = self.run_tool(json.dumps(issue(9, "[soundness] something")))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.strip(), "")
+
+    def test_empty_stdin_is_a_clean_no_op(self):
+        r = self.run_tool("")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.strip(), "")
+
+    def test_non_json_stdin_is_misuse_not_a_silent_pass(self):
+        r = self.run_tool("not json at all")
+        self.assertEqual(r.returncode, 2)
+
+    def test_a_bare_scalar_is_misuse(self):
+        r = self.run_tool("42")
+        self.assertEqual(r.returncode, 2)
+
+    def test_emoji_survives_the_round_trip(self):
+        # The label contains an emoji and a space; a decode slip turns it into
+        # "??" and every labeled proposal then looks unlabeled.
+        r = self.run_tool(json.dumps(issue(1, "[wildcard] a")))
+        self.assertIn("💎", r.stdout)
+        self.assertIn("Bounty", r.stdout)
 
 
 class RealTemplateTests(unittest.TestCase):
